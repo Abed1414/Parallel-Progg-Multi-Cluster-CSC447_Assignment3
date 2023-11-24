@@ -1,0 +1,68 @@
+#include <stdio.h>
+#define M 1000
+#define N 700
+#define K 700
+#define TILE_WIDTH 60
+
+	__global__ void matrixMul(int *a, int *b, int *c, int m, int n, int k) {
+		__shared__ int tile_a[TILE_WIDTH][TILE_WIDTH];
+		__shared__ int tile_b[TILE_WIDTH] [TILE_WIDTH];
+		int row = blockIdx.y * blockDim.y + threadIdx.y;
+		int col = blockIdx.x * blockDim.x + threadIdx.x;
+		int sum = 0;
+		for (int t = 0; t < (n - 1) / TILE_WIDTH + 1; ++t) {
+			if (row < m && (t * TILE_WIDTH + threadIdx.x) < n)
+				tile_a[threadIdx.y][ threadIdx.x]=a[row*n+t*TILE_WIDTH+threadIdx.x];
+			else
+				tile_a[threadIdx.y][ threadIdx.x] = 0;
+			if ((t * TILE_WIDTH + threadIdx.y) < n && col < k)
+				tile_b[threadIdx.y][threadIdx.x]=b[(t*TILE_WIDTH+threadIdx.y)*k+col];
+			else
+				tile_b[threadIdx.y][threadIdx.x] = 0;
+			__syncthreads();
+
+			for (int i = 0; i < TILE_WIDTH; ++i)
+				sum += tile_a[threadIdx.y][i] * tile_b[i][threadIdx.x];
+			__syncthreads();
+			}
+		if (row < m && col < k)
+			c[row * k + col] = sum;
+		}
+
+	int main() {
+
+		clock_t start_time, end_time;
+		double elapsed_time;
+		start_time = clock();
+		int a[M][N], b[N][K], c[M][K];
+		int *dev_a, *dev_b, *dev_c;
+		int size_a = M * N * sizeof(int);
+		int size_b = N * K * sizeof(int);
+		int size_c = M * K *sizeof(int);
+
+		for (int i = 0; i < M; ++i)
+			for (int j = 0; j < N; ++j)
+				a[i][j] = i + j;
+
+		for (int i = 0; i < N; ++i)
+			for (int j = 0; j < K; ++j)
+				b[i][j] = i - j;
+
+		cudaMalloc((void **)&dev_a, size_a);
+		cudaMalloc((void **)&dev_b, size_b);
+		cudaMalloc((void **)&dev_c, size_c);
+		cudaMemcpy(dev_a, a, size_a, cudaMemcpyHostToDevice);
+		cudaMemcpy(dev_b, b, size_b, cudaMemcpyHostToDevice);
+		dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
+		dim3 dimGrid((K - 1) / TILE_WIDTH + 1, (M - 1) / TILE_WIDTH + 1);
+		matrixMul<<<dimGrid, dimBlock>>>(dev_a, dev_b, dev_c, M, N, K);
+		cudaMemcpy(c, dev_c, size_c, cudaMemcpyDeviceToHost);
+		end_time = clock();
+		elapsed_time = ((double) (end_time - start_time)) / CLOCKS_PER_SEC;
+		printf("Elapsed time (with Tiling): %f seconds\n", elapsed_time);
+		cudaFree (dev_a);
+		cudaFree (dev_b);
+		cudaFree (dev_c);
+
+	return 0;
+	}
