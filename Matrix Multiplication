@@ -1,0 +1,54 @@
+#include <stdio.h>
+#define M 1000
+#define N 600
+#define K 700
+
+	__global__ void matrixMul(int *a, int *b, int *c, int m, int n, int k) {
+		int row = blockIdx.y * blockDim.y + threadIdx.y;
+		int col = blockIdx.x * blockDim.x + threadIdx.x;
+		if (row < m && col < k) {
+			int sum = 0;
+			for (int i = 0; i < n; ++i)
+				sum += a[row * n + i] * b[i* k + col];
+			c[row * k + col] = sum;
+		}
+	}
+	
+	int main() {
+
+		clock_t start_time, end_time;
+		double elapsed_time;
+		start_time = clock();
+		int a[M][N], b[N][K],c[M][K];
+		int *dev_a, *dev_b,*dev_c;
+		
+		int size_a = M * N * sizeof(int);
+		int size_b = N * K * sizeof(int);
+		int size_c = M* K * sizeof(int);
+		
+		for (int i = 0; i < M; ++i) 
+			for (int j = 0; j < N; ++j) 
+				a[i][j] = i + j;
+		
+			for (int i = 0; i < N; ++i) 
+				for (int j = 0; j < K; ++j) 
+					b[i][j] = i- j;
+	
+		cudaMalloc((void**)**&dev_a, size_a);
+		cudaMalloc((void**)&dev_b, size_b);
+		cudaMalloc((void**)&dev_c, size_c);
+		cudaMemcpy(dev_a, a, size_a, cudaMemcpyHostToDevice);
+		cudaMemcpy(dev_b, b, size_b, cudaMemcpyHostToDevice);
+		dim3 dimBlock(K, M);
+		dim3 dimGrid(1, 1);
+		matrixMul<<<dimGrid, dimBlock>>>(dev_a, dev_b, dev_c, M, N, K);
+		cudaMemcpy(c, dev_c, size_c, cudaMemcpyDeviceToHost);
+		end_time = clock();
+		elapsed_time = ((double) (end_time - start_time)) / CLOCKS_PER_SEC;
+		printf("Elapsed time: %f seconds\n", elapsed_time);
+		cudaFree (dev_a);
+		cudaFree (dev_b);
+		cudaFree (dev_c);
+		
+		return 0;
+	}
